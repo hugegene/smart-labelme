@@ -5,6 +5,7 @@ import os
 import os.path as osp
 import re
 import sys
+import shutil
 
 import imgviz
 from qtpy import QtCore
@@ -94,7 +95,7 @@ class MainWindow(QtWidgets.QMainWindow):
             flags=self._config['label_flags']
         )
 
-        self.labelList = LabelListWidget()
+        #Flag dock 1
         self.lastOpenDir = None
         self.flag_dock = self.flag_widget = None
         self.flag_dock = QtWidgets.QDockWidget(self.tr('Flags'), self)
@@ -105,6 +106,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.flag_dock.setWidget(self.flag_widget)
         self.flag_widget.itemChanged.connect(self.setDirty)
 
+
+        #Polygon label dock 1
+        self.labelList = LabelListWidget()
         self.labelList.itemSelectionChanged.connect(self.labelSelectionChanged)
         self.labelList.itemDoubleClicked.connect(self.editLabel)
         self.labelList.itemChanged.connect(self.labelItemChanged)
@@ -116,6 +120,34 @@ class MainWindow(QtWidgets.QMainWindow):
         self.shape_dock.setObjectName('Labels')
         self.shape_dock.setWidget(self.labelList)
 
+
+        #Flag dock 2
+        self.lastOpenDir2 = None
+        self.flag_dock2 = self.flag_widget2 = None
+        self.flag_dock2 = QtWidgets.QDockWidget(self.tr('Flags'), self)
+        self.flag_dock2.setObjectName('Flags')
+        self.flag_widget2 = QtWidgets.QListWidget()
+        if config['flags']:
+            self.loadFlags({k: False for k in config['flags']})
+        self.flag_dock2.setWidget(self.flag_widget)
+        self.flag_widget2.itemChanged.connect(self.setDirty)
+
+
+        #Polygon label dock 2
+        self.labelList2 = LabelListWidget()
+        self.labelList2.itemSelectionChanged.connect(self.labelSelectionChanged)
+        self.labelList2.itemDoubleClicked.connect(self.editLabel)
+        self.labelList2.itemChanged.connect(self.labelItemChanged)
+        self.labelList2.itemDropped.connect(self.labelOrderChanged)
+        self.shape_dock2 = QtWidgets.QDockWidget(
+            self.tr('Polygon Labels'),
+            self
+        )
+        self.shape_dock2.setObjectName('Labels')
+        self.shape_dock2.setWidget(self.labelList2)
+
+
+        #unique label dock 1
         self.uniqLabelList = UniqueLabelQListWidget()
         self.uniqLabelList.setToolTip(self.tr(
             "Select label to start annotating for it. "
@@ -130,23 +162,45 @@ class MainWindow(QtWidgets.QMainWindow):
         self.label_dock.setObjectName(u'Label List')
         self.label_dock.setWidget(self.uniqLabelList)
 
+
+        # file list 1
         self.fileSearch = QtWidgets.QLineEdit()
         self.fileSearch.setPlaceholderText(self.tr('Search Filename'))
         self.fileSearch.textChanged.connect(self.fileSearchChanged)
         self.fileListWidget = QtWidgets.QListWidget()
-        self.fileListWidget.itemSelectionChanged.connect(
-            self.fileSelectionChanged
-        )
+        self.fileListWidget.itemSelectionChanged.connect(self.fileSelectionChanged)
+        self.fileListWidget.itemClicked.connect(self.fileSelectionChanged)
         fileListLayout = QtWidgets.QVBoxLayout()
         fileListLayout.setContentsMargins(0, 0, 0, 0)
         fileListLayout.setSpacing(0)
-        #fileListLayout.addWidget(self.fileSearch)
+        fileListLayout.addWidget(self.fileSearch)
         fileListLayout.addWidget(self.fileListWidget)
         self.file_dock = QtWidgets.QDockWidget(self.tr(u'File List'), self)
         self.file_dock.setObjectName(u'Files')
         fileListWidget = QtWidgets.QWidget()
         fileListWidget.setLayout(fileListLayout)
         self.file_dock.setWidget(fileListWidget)
+
+
+        # file list 2
+        self.predbut= QtWidgets.QPushButton("predict")
+        self.transferbut2 = QtWidgets.QPushButton("overwrite up")
+        self.transferbut2.clicked.connect(self.saveToAnnotations)
+        self.fileListWidget2 = QtWidgets.QListWidget()
+        self.fileListWidget2.itemSelectionChanged.connect(self.fileSelectionChanged2)
+        self.fileListWidget2.itemClicked.connect(self.fileSelectionChanged2)
+        fileListLayout2 = QtWidgets.QVBoxLayout()
+        fileListLayout2.setContentsMargins(0, 0, 0, 0)
+        fileListLayout2.setSpacing(0)
+        #fileListLayout.addWidget(self.fileSearch)
+        fileListLayout2.addWidget(self.transferbut2)
+        fileListLayout2.addWidget(self.predbut)
+        fileListLayout2.addWidget(self.fileListWidget2)
+        self.file_dock2 = QtWidgets.QDockWidget(self.tr(u'File List'), self)
+        self.file_dock2.setObjectName(u'Files')
+        fileListWidget2 = QtWidgets.QWidget()
+        fileListWidget2.setLayout(fileListLayout2)
+        self.file_dock2.setWidget(fileListWidget2)
 
         self.zoomWidget = ZoomWidget()
 
@@ -184,10 +238,13 @@ class MainWindow(QtWidgets.QMainWindow):
             if self._config[dock]['show'] is False:
                 getattr(self, dock).setVisible(False)
 
+        self.addDockWidget(Qt.RightDockWidgetArea, self.flag_dock2)
         self.addDockWidget(Qt.RightDockWidgetArea, self.flag_dock)
         self.addDockWidget(Qt.RightDockWidgetArea, self.label_dock)
         self.addDockWidget(Qt.RightDockWidgetArea, self.shape_dock)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.shape_dock2)
         self.addDockWidget(Qt.RightDockWidgetArea, self.file_dock)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.file_dock2)
 
         # Actions
         action = functools.partial(utils.newAction, self)
@@ -201,6 +258,10 @@ class MainWindow(QtWidgets.QMainWindow):
                        self.tr('Open image or label file'))
         opendir = action(self.tr('&Open DIR'), self.openDirDialog,
                          shortcuts['open_dir'], 'open', self.tr(u'Open Dir containing images'))
+
+        opendir2 = action(self.tr('&Open DIR2'), self.openDirDialog2,
+                    shortcuts['open_dir'], 'open', self.tr(u'Open Dir 2 containing images'))
+        
         openseg = action(self.tr('&Open Overlay DIR'), self.openOverlayDirDialog,
                          shortcuts['open_seg'], 'open', self.tr(u'Open Dir containing overlay images'), enabled=False,
                          )
@@ -609,6 +670,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.actions.tool = (
             #open_,
             opendir,
+            opendir2,
             openseg,
             openNextImg,
             openPrevImg,
@@ -665,6 +727,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if filename is not None and osp.isdir(filename):
             if self.output_dir is None:
+                print("changing output directory")
                 #Update to default output directory when directory changes!
                 self.output_dir = osp.join(filename,'Annotations')
                 if not osp.exists(self.output_dir):
@@ -729,6 +792,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def noShapes(self):
         return not len(self.labelList)
 
+    def saveToAnnotations(self):
+        if self.labelFile:
+            # self.labelFile.save()
+            dest = self.labelFile.filename.replace("Preds","Annotations")
+            print(dest)
+            shutil.copy(self.labelFile.filename, dest)
+            
     def populateModeActions(self):
         tool, menu = self.actions.tool, self.actions.menu
         self.tools.clear()
@@ -750,11 +820,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def setDirty(self):
         if self._config['auto_save'] or self.actions.saveAuto.isChecked():
+            # label_file = osp.dirname(self.imagePath) + "/"+folder+"/" +osp.basename(self.imagePath)[:-3] +"json"
             label_file = osp.splitext(self.imagePath)[0] + '.json'
             if self.output_dir:
                 label_file_without_path = osp.basename(label_file)
                 label_file = osp.join(self.output_dir, label_file_without_path)
-            self.saveLabels(label_file)
+            # self.saveLabels(label_file)
+            self.saveLabels(self.labelFileName)
             return
         self.dirty = True
         self.actions.save.setEnabled(True)
@@ -1020,6 +1092,20 @@ class MainWindow(QtWidgets.QMainWindow):
             if filename:
                 self.loadFile(filename)
 
+    def fileSelectionChanged2(self):
+        items = self.fileListWidget2.selectedItems()
+        if not items:
+            return
+        item = items[0]
+        if not self.mayContinue():
+            return
+
+        currIndex = self.imageList2.index(str(item.text()))
+        if currIndex < len(self.imageList2):
+            filename = self.imageList2[currIndex]
+            if filename:
+                self.loadFile2(filename)
+
     # React to canvas signals.
     def shapeSelectionChanged(self, selected_shapes):
         self._noSelectionSlot = True
@@ -1163,6 +1249,7 @@ class MainWindow(QtWidgets.QMainWindow):
             imageData = None#self.imageData if self._config['store_data'] else None
             if osp.dirname(filename) and not osp.exists(osp.dirname(filename)):
                 os.makedirs(osp.dirname(filename))
+
             lf.save(
                 filename=filename,
                 shapes=shapes,
@@ -1317,14 +1404,14 @@ class MainWindow(QtWidgets.QMainWindow):
         for item in self.labelList:
             item.setCheckState(Qt.Checked if value else Qt.Unchecked)
 
-    def loadFile(self, filename=None):
+    def loadFile2(self, filename=None):
         """Load the specified file, or the last opened file if None."""
         # changing fileListWidget loads file
-        if (filename in self.imageList and
-                self.fileListWidget.currentRow() !=
-                self.imageList.index(filename)):
-            self.fileListWidget.setCurrentRow(self.imageList.index(filename))
-            self.fileListWidget.repaint()
+        if (filename in self.imageList2 and
+                self.fileListWidget2.currentRow() !=
+                self.imageList2.index(filename)):
+            self.fileListWidget2.setCurrentRow(self.imageList2.index(filename))
+            self.fileListWidget2.repaint()
             return
 
         self.resetState()
@@ -1341,11 +1428,15 @@ class MainWindow(QtWidgets.QMainWindow):
             return False
         # assumes same name, but json extension
         self.status(self.tr("Loading %s...") % osp.basename(str(filename)))
-        label_file = osp.splitext(filename)[0] + '.json'
+        # label_file = osp.splitext(filename)[0] + '.json'
+        label_file = osp.dirname(filename) + "/Preds/" +osp.basename(filename)[:-3] +"json"
+
         if self.output_dir:
             label_file_without_path = osp.basename(label_file)
             label_file = osp.join(self.output_dir, label_file_without_path)
 
+        self.labelFileName = label_file
+        # print(self.labelFileName)
         image = QtGui.QImage()
 
         if QtCore.QFile.exists(label_file) and \
@@ -1382,6 +1473,155 @@ class MainWindow(QtWidgets.QMainWindow):
             if not image.isNull():
                 self.imagePath = filename
             self.labelFile = None
+        print(self.labelFile)
+            
+
+        #image = QtGui.QImage.fromData(self.imageData)
+        if image.isNull():
+            formats = ['*.{}'.format(fmt.data().decode())
+                       for fmt in QtGui.QImageReader.supportedImageFormats()]
+            self.errorMessage(
+                self.tr('Error opening file'),
+                self.tr(
+                    '<p>Make sure <i>{0}</i> is a valid image file.<br/>'
+                    'Supported image formats: {1}</p>'
+                ).format(filename, ','.join(formats))
+            )
+            self.status(self.tr("Error reading %s") % filename)
+            return False
+
+        self.previmage = self.image
+        self.image = image
+        self.filename = filename
+        aux_image = QtGui.QImage()
+
+        if self.overlay_dir is not None:
+            fn = os.path.basename(filename)
+            ir_file = os.path.join(self.overlay_dir,fn)
+            if not QtCore.QFile.exists(ir_file):
+                self.errorMessage(
+                    self.tr('Error opening file'),
+                    self.tr('No such file: <b>%s</b>') % ir_file
+                )
+            else:
+                aux_image = QtGui.QImage(ir_file)
+                #aux_image = aux_image.convertToFormat(QtGui.QImage.Format_Indexed8)
+                #aux_image.setColorTable(self.auxillary_color_table)
+
+        #if self._config['keep_prev']:
+        if self.tracker_dict:
+            prev_shapes = self.canvas.shapes
+
+        if not aux_image.isNull():
+            self.canvas.loadPixmap(QtGui.QPixmap.fromImage(image),QtGui.QPixmap.fromImage(aux_image))
+        else:
+            self.canvas.loadPixmap(QtGui.QPixmap.fromImage(image), QtGui.QPixmap())
+
+        flags = {k: False for k in self._config['flags'] or []}
+        if self.labelFile:
+            self.loadLabels(self.labelFile.shapes)
+            if self.labelFile.flags is not None:
+                flags.update(self.labelFile.flags)
+        self.loadFlags(flags)
+
+        if self.tracker_dict and self.noShapes():
+            track_shapes = self.track_shape(prev_shapes)
+            self.loadShapes(track_shapes, replace=False)
+
+            self.setDirty()
+        else:
+            self.setClean()
+
+        self.canvas.setEnabled(True)
+        # set zoom values
+        is_initial_load = not self.zoom_values
+        if self.filename in self.zoom_values:
+            self.zoomMode = self.zoom_values[self.filename][0]
+            self.setZoom(self.zoom_values[self.filename][1])
+        elif is_initial_load or not self._config['keep_prev_scale']:
+            self.adjustScale(initial=True)
+        # set scroll values
+        for orientation in self.scroll_values:
+            if self.filename in self.scroll_values[orientation]:
+                self.setScroll(
+                    orientation, self.scroll_values[orientation][self.filename]
+                )
+        self.paintCanvas()
+        self.addRecentFile(self.filename)
+        self.toggleActions(True)
+        self.status(self.tr("Loaded %s") % osp.basename(str(filename)))
+        return True
+
+    def loadFile(self, filename=None):
+        """Load the specified file, or the last opened file if None."""
+        # changing fileListWidget loads file
+        if (filename in self.imageList and
+                self.fileListWidget.currentRow() !=
+                self.imageList.index(filename)):
+            self.fileListWidget.setCurrentRow(self.imageList.index(filename))
+            self.fileListWidget.repaint()
+            return
+
+        self.resetState()
+        self.canvas.setEnabled(False)
+        if filename is None:
+            filename = self.settings.value('filename', '')
+        filename = str(filename)
+
+        if not QtCore.QFile.exists(filename):
+            self.errorMessage(
+                self.tr('Error opening file'),
+                self.tr('No such file: <b>%s</b>') % filename
+            )
+            return False
+        # assumes same name, but json extension
+        self.status(self.tr("Loading %s...") % osp.basename(str(filename)))
+        # label_file = osp.splitext(filename)[0] + '.json'
+        label_file = osp.dirname(filename) + "/Annotations/" +osp.basename(filename)[:-3] +"json"
+        
+        if self.output_dir:
+            label_file_without_path = osp.basename(label_file)
+            label_file = osp.join(self.output_dir, label_file_without_path)
+
+        self.labelFileName = label_file
+        # print(self.labelFileName)
+        image = QtGui.QImage()
+
+        if QtCore.QFile.exists(label_file) and \
+                LabelFile.is_label_file(label_file):
+            try:
+                self.labelFile = LabelFile(label_file)
+            except LabelFileError as e:
+                self.errorMessage(
+                    self.tr('Error opening file'),
+                    self.tr(
+                        "<p><b>%s</b></p>"
+                        "<p>Make sure <i>%s</i> is a valid label file."
+                    ) % (e, label_file)
+                )
+                self.status(self.tr("Error reading %s") % label_file)
+                return False
+
+            #self.imageData = self.labelFile.imageData
+            self.imagePath = osp.join(
+                osp.dirname(label_file),
+                self.labelFile.imagePath,
+            )
+            image = QtGui.QImage(filename)
+
+            imgSize = self.labelFile.imgsize
+            if imgSize is None or imgSize[0] != image.width() or imgSize[1] != image.height():
+                self.errorMessage('Error matching image resolution',
+                                  'Image resolution does not match as in saved label!')
+
+            self.otherData = self.labelFile.otherData
+        else:
+            #self.imageData = LabelFile.load_image_file(filename)
+            image = QtGui.QImage(filename)
+            if not image.isNull():
+                self.imagePath = filename
+            self.labelFile = None
+        print(self.labelFile)
 
         #image = QtGui.QImage.fromData(self.imageData)
         if image.isNull():
@@ -1615,7 +1855,7 @@ class MainWindow(QtWidgets.QMainWindow):
         output_dir = str(output_dir)
         if(output_dir != self.output_dir):
             self.output_dir = output_dir
-            self.updateFileListForOutputDirectory()
+            self.updateFileListForOutputDirectory(output_dir, folder="Annotations")
             self.openNextImg(load=True)
 
     def saveFile(self, _value=False):
@@ -1775,7 +2015,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def moveShape(self):
         self.canvas.endMove(copy=False)
-        self.setDirty()
+        self.setDirty(folder="Preds")
 
     def openDirDialog(self, _value=False, dirpath=None):
         if not self.mayContinue():
@@ -1796,13 +2036,40 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QFileDialog.DontResolveSymlinks))
 
         #Update to default output directory when directory changes!
-        output_dir = osp.join(targetDirPath,'Annotations')
-        if not osp.exists(output_dir):
-            os.makedirs(output_dir)
+        # output_dir = osp.join(targetDirPath,'Annotations')
+        # if not osp.exists(output_dir):
+        #     os.makedirs(output_dir)
 
-        self.output_dir = output_dir
+        # self.output_dir = output_dir
 
         self.importDirImages(targetDirPath)
+
+    def openDirDialog2(self, _value=False, dirpath=None):
+        if not self.mayContinue():
+            return
+
+        defaultOpenDirPath = dirpath if dirpath else '.'
+        if self.lastOpenDir and osp.exists(self.lastOpenDir):
+            defaultOpenDirPath = self.lastOpenDir
+        else:
+            defaultOpenDirPath = osp.dirname(self.filename) \
+                if self.filename else '.'
+
+        targetDirPath = str(QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            self.tr('%s - Open Directory') % __appname__,
+            defaultOpenDirPath,
+            QtWidgets.QFileDialog.ShowDirsOnly |
+            QtWidgets.QFileDialog.DontResolveSymlinks))
+
+        #Update to default output directory when directory changes!
+        # output_dir = osp.join(targetDirPath,'Annotations')
+        # if not osp.exists(output_dir):
+        #     os.makedirs(output_dir)
+
+        # self.output_dir = output_dir
+
+        self.importDirImages2(targetDirPath)
 
 
     def openOverlayDirDialog(self, _value=False, dirpath=None):
@@ -1837,6 +2104,39 @@ class MainWindow(QtWidgets.QMainWindow):
             item = self.fileListWidget.item(i)
             lst.append(item.text())
         return lst
+    
+    @property
+    def imageList2(self):
+        lst = []
+        for i in range(self.fileListWidget2.count()):
+            item = self.fileListWidget2.item(i)
+            lst.append(item.text())
+        return lst
+
+    def importDirImages2(self, dirpath, pattern=None, load=True):
+
+        if not self.mayContinue() or not dirpath:
+            return
+
+        self.actions.openNextImg.setEnabled(True)
+        self.actions.openPrevImg.setEnabled(True)
+        self.actions.openseg.setEnabled(True)
+        self.actions.toggle_tracker.setEnabled(True)
+
+        self.lastOpenDir = dirpath
+        self.filename = None
+        self.fileListWidget2.clear()
+        file_list = self.scanAllImages(dirpath, pattern)
+
+        for filename in file_list:
+            item = QtWidgets.QListWidgetItem(filename)
+            item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            item.setCheckState(Qt.Unchecked)
+
+            self.fileListWidget2.addItem(item)
+
+        self.updateFileListForOutputDirectory2(dirpath, folder="Preds")
+        self.openNextImg(load=load)
 
     def importDirImages(self, dirpath, pattern=None, load=True):
 
@@ -1860,23 +2160,31 @@ class MainWindow(QtWidgets.QMainWindow):
 
             self.fileListWidget.addItem(item)
 
-        self.updateFileListForOutputDirectory()
-
+        self.updateFileListForOutputDirectory(dirpath, folder="Annotations")
         self.openNextImg(load=load)
 
-    def updateFileListForOutputDirectory(self):
+    def updateFileListForOutputDirectory(self, dirpath, folder="Annotations"):
 
-        if not self.output_dir:
-            return
+        # if not self.output_dir:
+        #     return
 
         self.statusBar().showMessage(
             self.tr('%s . Annotations will be saved/loaded in %s') %
             ('Change Annotations Dir', self.output_dir))
         self.statusBar().show()
 
+        # print("self.output_dir")
+
         label_available = []
-        if osp.isdir(self.output_dir):
-            label_available = [ f for f in next(os.walk(self.output_dir))[2]]
+        subdirs = [subdir for subdir in os.listdir(dirpath) if os.path.isdir(dirpath+"/"+subdir)] 
+        for subdir in subdirs:
+            for file in os.listdir(dirpath+"/"+subdir+"/"+folder+"/"):
+                if file.lower().endswith(".json"):
+                    label_available += [file]
+
+        # label_available = []
+        # if osp.isdir(self.output_dir):
+        #     label_available = [ f for f in next(os.walk(self.output_dir))[2]]
 
         for i in range(self.fileListWidget.count()):
             item = self.fileListWidget.item(i)
@@ -1898,6 +2206,49 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.fileListWidget.repaint()
 
+    def updateFileListForOutputDirectory2(self, dirpath, folder="Preds"):
+
+        # if not self.output_dir:
+        #     return
+
+        self.statusBar().showMessage(
+            self.tr('%s . Annotations will be saved/loaded in %s') %
+            ('Change Annotations Dir', self.output_dir))
+        self.statusBar().show()
+
+        # print("self.output_dir")
+
+        label_available = []
+        subdirs = [subdir for subdir in os.listdir(dirpath) if os.path.isdir(dirpath+"/"+subdir)] 
+        for subdir in subdirs:
+            for file in os.listdir(dirpath+"/"+subdir+"/"+folder+"/"):
+                if file.lower().endswith(".json"):
+                    label_available += [file]
+
+        # label_available = []
+        # if osp.isdir(self.output_dir):
+        #     label_available = [ f for f in next(os.walk(self.output_dir))[2]]
+
+        for i in range(self.fileListWidget2.count()):
+            item = self.fileListWidget2.item(i)
+            filename = item.text()
+
+            label_file = osp.splitext(filename)[0] + '.json'
+            label_file = osp.basename(label_file)
+
+            if label_file in label_available:
+            #LabelFile.is_label_file(osp.join(self.output_dir, label_file)):
+                item.setCheckState(Qt.Checked)
+            else:
+                item.setCheckState(Qt.Unchecked)
+
+        if self.filename in self.imageList2:
+            # retain currently selected file
+            self.fileListWidget2.setCurrentRow(
+                self.imageList2.index(self.filename))
+
+        self.fileListWidget2.repaint()
+
     def getFileIndex(self,file):
         regex = re.compile(r'\d+')
         idx = regex.findall(file)
@@ -1909,9 +2260,24 @@ class MainWindow(QtWidgets.QMainWindow):
                       for fmt in QtGui.QImageReader.supportedImageFormats()]
         images = []
 
-        files = next(os.walk(folderPath))[2] # walk only first level
+        subdirs = [subdir for subdir in os.listdir(folderPath) if os.path.isdir(folderPath+"/"+subdir)] 
+        print(subdirs)
+        for subdir in subdirs:
+            for file in os.listdir(folderPath+"/"+subdir):
+                # for file in files:
+                if file.lower().endswith(tuple(extensions)):
+                    relativePath = osp.join(folderPath, subdir, file)
+                    if pattern and pattern not in relativePath:
+                        continue
+                    if re.search(r'\d+', file):
+                        images.append(relativePath)
+                    else:
+                        self.errorMessage('Input files do not have \d+ regex','Failed to load some images!')
+                        return []
 
+        files = next(os.walk(folderPath))[2] # walk only first level
         for file in files:
+            # for file in files:
             if file.lower().endswith(tuple(extensions)):
                 relativePath = osp.join(folderPath, file)
                 if pattern and pattern not in relativePath:
@@ -1921,6 +2287,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 else:
                     self.errorMessage('Input files do not have \d+ regex','Failed to load some images!')
                     return []
+
 
         images = sorted(images, key = self.getFileIndex)
         return images
